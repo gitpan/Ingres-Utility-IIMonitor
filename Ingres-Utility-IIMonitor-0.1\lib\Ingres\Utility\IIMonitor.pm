@@ -6,37 +6,45 @@ use Carp;
 use Expect::Simple;
 use Data::Dump qw(dump);
 
-use version; $VERSION = qv('0.0.3');
-
-# Other recommended modules (uncomment to use):
-#  use IO::Prompt;
-#  use Perl6::Export;
-#  use Perl6::Slurp;
-#  use Perl6::Say;
-
-
-# Module implementation here
-
-
-1; # Magic true value required at end of module
-__END__
-
 =head1 NAME
 
-Ingres::Utility::IIMonitor - [One line description of module's purpose here]
+Ingres::Utility::IIMonitor - API to IIMONITOR, the Ingres utility for IIDBMS servers control
 
 
 =head1 VERSION
 
-Version 0.0.1
+Version 0.1
 
+=cut
+
+our $VERSION = '0.1';
 
 =head1 SYNOPSIS
 
     use Ingres::Utility::IIMonitor;
     
+    # create a connection to an IIDBMS server
+    # (server id can be obtained through Ingres::Utility::IIName)
     $foo = Ingres::Utility::IIMonitor->new($serverid);
     
+    # showServer() - shows server status
+    #
+    # is the server listening to new connections? (OPEN/CLOSED)
+    $status =$foo->showServer('LISTEN');
+    #
+    # is the server being shut down?
+    $status =$foo->showServer('SHUTDOWN');
+    
+    # setServer() - sets server status
+    #
+    # stop listening to new connections
+    $status =$foo->setServer('CLOSED');
+    #
+    # start shutting down (wait for connections to close)
+    $status =$foo->setServer('SHUT');
+    
+    # stop() - stops IIDBMS server (transactions rolled back)
+    #
     $ret = $foo->stop();
 
 =for author to fill in:
@@ -47,35 +55,24 @@ Version 0.0.1
   
 =head1 DESCRIPTION
 
-This module provides an easy interface to the iimonitor utility of
-the Ingres RDBMS, which provides a mean to locally control
-IIDBMS servers and sessions (conections).
+This module provides an API to the iimonitor utility for
+Ingres RDBMS, which provides local control of IIDBMS servers
+and sessions (system and user conections).
 
 =for author to fill in:
     Write a full description of the module and its features here.
     Use subsections (=head2, =head3) as appropriate.
 
 
-=head1 INTERFACE 
-
-=for author to fill in:
-    Write a separate section listing the public components of the modules
-    interface. These normally consist of either subroutines that may be
-    exported, or methods that may be called on objects belonging to the
-    classes provided by the module.
-
-
-=head1 EXPORT
-
-A list of functions that can be exported.  You can delete this section
-if you don't export anything, such as for a purely object-oriented module.
-
 =head1 FUNCTIONS
 
-=head2 new
+=head2 new($serverId)
+Connects to an IIDBMS server.
+
 Takes the server id as argument to identify which server
 to control.
-Can be obtained through Ingres::Utility::IIName module.
+
+The server id can be obtained through Ingres::Utility::IIName module.
 
 =cut
 
@@ -104,14 +101,18 @@ sub new {
 	return $this;
 }
 
-=head2 showServer
+=head2 showServer($serverStatus)
 
-Return the server status.
+Returns the server status.
+
 Takes the server status to query:
-LISTEN = server listening to new connections
-SHUTDOWN = server waiting for connections to close to
+
+ LISTEN = server listening to new connections
+ 
+ SHUTDOWN = server waiting for connections to close to
 end process.
-Returns OPEN, CLOSED or PENDING (for shutdown).
+
+Returns 'OPEN', 'CLOSED' or 'PENDING' (for shutdown).
 
 =cut
 
@@ -139,9 +140,12 @@ sub showServer {
 =head2 setServer
 
 Changes the server status to the state indicated by the argument:
-SHUT = server will shutdown after all connections are closed
-CLOSED = stops listening to new connections
-OPEN = reestablishes listening to new connections
+
+ SHUT = server will shutdown after all connections are closed
+
+ CLOSED = stops listening to new connections
+
+ OPEN = reestablishes listening to new connections
 
 =cut
 
@@ -181,7 +185,7 @@ sub setServer {
 
 =head2 stopServer
 
-Stops server immediatly, closing all connections.
+Stops server immediatly, rolling back transactions and closing all connections.
 
 =cut
 
@@ -208,15 +212,22 @@ sub stopServer {
 
 =over
 
-=item C<< Error message here, perhaps with %s placeholders >>
+=item C<< Ingres environment variable II_SYSTEM not set >>
 
-[Description of error here]
+Ingres environment variables should be set on the user session running
+this module.
+II_SYSTEM provides the root install dir (the one before 'ingres' dir).
+LD_LIBRARY_PATH also. See Ingres RDBMS docs.
 
-=item C<< Another error message here >>
+=item C<< Ingres utility cannot be executed: _COMMAND_FULL_PATH_ >>
 
-[Description of error here]
+The IIMONITOR command could not be found or does not permits execution for
+the current user.
 
-[Et cetera, et cetera]
+=item C<< invalid status: _SERVER_STATUS_PARAM_ >>
+
+The setServer() method received an invalid argument.
+Should be LISTEN, SHUTDOWN or let void.
 
 =back
 
@@ -230,7 +241,8 @@ sub stopServer {
     that can be set. These descriptions must also include details of any
     configuration language used.
   
-Requires Ingres environment variables, such as II_SYSTEM.
+Requires Ingres environment variables, such as II_SYSTEM and LD_LIBRARY_PATH.
+See Ingres RDBMS documentation.
 
 
 =head1 DEPENDENCIES
@@ -241,7 +253,7 @@ Requires Ingres environment variables, such as II_SYSTEM.
     the module is part of the standard Perl distribution, part of the
     module's distribution, or must be installed separately. ]
 
-None.
+Expect::Simple
 
 
 =head1 INCOMPATIBILITIES
@@ -278,7 +290,7 @@ L<http://rt.cpan.org>.
 
 You can find documentation for this module with the perldoc command.
 
-    perldoc Ingres::Utility::IIName
+    perldoc Ingres::Utility::IIMonitor
 
 You can also look for information at:
 
@@ -286,25 +298,27 @@ You can also look for information at:
 
 =item * AnnoCPAN: Annotated CPAN documentation
 
-L<http://annocpan.org/dist/Ingres-Utility-IIName>
+L<http://annocpan.org/dist/Ingres-Utility-IIMonitor>
 
 =item * CPAN Ratings
 
-L<http://cpanratings.perl.org/d/Ingres-Utility-IIName>
+L<http://cpanratings.perl.org/d/Ingres-Utility-IIMonitor>
 
 =item * RT: CPAN's request tracker
 
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Ingres-Utility-IIName>
+L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=Ingres-Utility-IIMonitor>
 
 =item * Search CPAN
 
-L<http://search.cpan.org/dist/Ingres-Utility-IIName>
+L<http://search.cpan.org/dist/Ingres-Utility-IIMonitor>
 
 =back
 
 
 =head1 ACKNOWLEDGEMENTS
 
+Thanks to Computer Associates (CA) for licensing Ingres as
+open source, and let us hope for Ingres Corp to keep it that way.
 
 =head1 AUTHOR
 
@@ -313,7 +327,10 @@ Joner Cyrre Worm  C<< <FAJCNLXLLXIH at spammotel.com> >>
 
 =head1 LICENCE AND COPYRIGHT
 
-Copyright (c) 2006, Joner Cyrre Worm C<< <FAJCNLXLLXIH at spammotel.com> >>. All rights reserved.
+Copyright (c) 2006, Joner Cyrre Worm C<< <FAJCNLXLLXIH at spammotel.com>. All rights reserved.
+
+
+Ingres is a registered brand of Ingres Corporation.
 
 This module is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself. See L<perlartistic>.
@@ -344,4 +361,5 @@ SUCH DAMAGES.
 
 =cut
 
-1; # End of Ingres::Utility::IIName
+1; # End of Ingres::Utility::IIMonitor
+__END__
