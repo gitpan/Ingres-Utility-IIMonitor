@@ -8,23 +8,23 @@ use Data::Dump qw(dump);
 
 =head1 NAME
 
-Ingres::Utility::IIMonitor - API to IIMONITOR, the Ingres utility for IIDBMS servers control
+Ingres::Utility::IIMonitor - API to IIMONITOR Ingres utility for IIDBMS servers control
 
 
 =head1 VERSION
 
-Version 0.1
+Version 0.02
 
 =cut
 
-our $VERSION = '0.1';
+our $VERSION = '0.02';
 
 =head1 SYNOPSIS
 
     use Ingres::Utility::IIMonitor;
     
     # create a connection to an IIDBMS server
-    # (server id can be obtained through Ingres::Utility::IIName)
+    # (server id can be obtained through Ingres::Utility::IINamu)
     $foo = Ingres::Utility::IIMonitor->new($serverid);
     
     # showServer() - shows server status
@@ -67,12 +67,13 @@ and sessions (system and user conections).
 =head1 FUNCTIONS
 
 =head2 new($serverId)
+
 Connects to an IIDBMS server.
 
 Takes the server id as argument to identify which server
 to control.
 
-The server id can be obtained through Ingres::Utility::IIName module.
+The server id can be obtained through L<Ingres::Utility::IINamu> module.
 
 =cut
 
@@ -109,8 +110,7 @@ Takes the server status to query:
 
  LISTEN = server listening to new connections
  
- SHUTDOWN = server waiting for connections to close to
-end process.
+ SHUTDOWN = server waiting for connections to close to end process.
 
 Returns 'OPEN', 'CLOSED' or 'PENDING' (for shutdown).
 
@@ -214,10 +214,10 @@ sub stopServer {
 
 =item C<< Ingres environment variable II_SYSTEM not set >>
 
-Ingres environment variables should be set on the user session running
+Ingres environment variables should be set in the user session running
 this module.
 II_SYSTEM provides the root install dir (the one before 'ingres' dir).
-LD_LIBRARY_PATH also. See Ingres RDBMS docs.
+LD_LIBRARY_PATH too. See Ingres RDBMS docs.
 
 =item C<< Ingres utility cannot be executed: _COMMAND_FULL_PATH_ >>
 
@@ -242,6 +242,7 @@ Should be LISTEN, SHUTDOWN or let void.
     configuration language used.
   
 Requires Ingres environment variables, such as II_SYSTEM and LD_LIBRARY_PATH.
+
 See Ingres RDBMS documentation.
 
 
@@ -253,7 +254,7 @@ See Ingres RDBMS documentation.
     the module is part of the standard Perl distribution, part of the
     module's distribution, or must be installed separately. ]
 
-Expect::Simple
+L<Expect::Simple>
 
 
 =head1 INCOMPATIBILITIES
@@ -325,9 +326,9 @@ open source, and let us hope for Ingres Corp to keep it that way.
 Joner Cyrre Worm  C<< <FAJCNLXLLXIH at spammotel.com> >>
 
 
-=head1 LICENCE AND COPYRIGHT
+=head1 LICENSE AND COPYRIGHT
 
-Copyright (c) 2006, Joner Cyrre Worm C<< <FAJCNLXLLXIH at spammotel.com>. All rights reserved.
+Copyright (c) 2006, Joner Cyrre Worm C<< <FAJCNLXLLXIH at spammotel.com> >>. All rights reserved.
 
 
 Ingres is a registered brand of Ingres Corporation.

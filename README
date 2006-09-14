@@ -1,4 +1,4 @@
-Ingres-Utility-IIMonitor version 0.1
+Ingres-Utility-IIMonitor version 0.02
 
 This module provides an API to the iimonitor utility for
 Ingres RDBMS, which provides local control of IIDBMS servers
