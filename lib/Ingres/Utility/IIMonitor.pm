@@ -13,11 +13,11 @@ Ingres::Utility::IIMonitor - API to IIMONITOR Ingres utility for IIDBMS servers 
 
 =head1 VERSION
 
-Version 0.10
+Version 0.11
 
 =cut
 
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 =head1 SYNOPSIS
 
@@ -82,23 +82,28 @@ sub new {
 	my $this = {};
 	$class = ref($class) || $class;
 	bless $this, $class;
+	my $serverId = shift;
+	if (! $serverId) {
+		die $class . "::new(): parameter missing: serverId";
+	}
 	if (! defined($ENV{'II_SYSTEM'})) {
-		die $class . ": Ingres environment variable II_SYSTEM not set";
+		die $class . "::new(): Ingres environment variable II_SYSTEM not set";
 	}
 	my $iimonitor_file = $ENV{'II_SYSTEM'} . '/ingres/bin/iimonitor';
 	
 	if (! -x $iimonitor_file) {
-		die $class . ": Ingres utility cannot be executed: $iimonitor_file";
+		die $class . "::new(): Ingres utility cannot be executed: $iimonitor_file";
 	}
 	$this->{cmd} = $iimonitor_file;
 	$this->{xpct} = new Expect::Simple {
-				Cmd => $iimonitor_file,
+				Cmd => "$iimonitor_file $serverId",
 				Prompt => [ -re => 'IIMONITOR>\s+' ],
 				DisconnectCmd => 'QUIT',
 				Verbose => 0,
 				Debug => 0,
 				Timeout => 10
-        } or die $this . ": Module Expect::Simple cannot be instanciated.";
+        } or die $this . "::new(): Module Expect::Simple cannot be instanciated";
+        $this->{serverId} = $serverId;
 	return $this;
 }
 
@@ -118,26 +123,26 @@ Returns 'OPEN', 'CLOSED' or 'PENDING' (for shutdown).
 
 sub showServer {
 	my $this = shift;
-	my $server_status = uc (@_ ? shift : '');
-	if ($server_status) {
-		if ($server_status != 'LISTEN') {
-			if ($server_status != 'SHUTDOWN') {
-				die $this . ": invalid status: $server_status";
+	my $serverStatus = uc (@_ ? shift : '');
+	if ($serverStatus) {
+		if ($serverStatus != 'LISTEN') {
+			if ($serverStatus != 'SHUTDOWN') {
+				die $this . "::showServer(): invalid status: $serverStatus";
 			}
 		}
 	}
 	#print $this . ": cmd = $cmd";
 	my $obj = $this->{xpct};
-	$obj->send( 'SHOW SERVER ' . $server_status );
+	$obj->send( 'SHOW SERVER ' . $serverStatus );
 	my $before = $obj->before;
 	while ($before =~ /\ \ /) {
 		$before =~ s/\ \ /\ /g;
 	}
 	my @antes = split(/\r\n/,$before);
-	return join($RS,@antes);
+	return join($/,@antes);
 }
 
-=head2 setServer
+=head2 setServer($serverStatus)
 
 Changes the server status to the state indicated by the argument:
 
@@ -151,34 +156,34 @@ Changes the server status to the state indicated by the argument:
 
 sub setServer {
 	my $this = shift;
-	my $server_status = uc (shift);
-	if (! $server_status) {
-		die $this . ': no status given';
+	my $serverStatus = uc (shift);
+	if (! $serverStatus) {
+		die $this . '::setServer(): no status given';
 	}
 	if ($server_status != 'SHUT') {
 		if ($server_status != 'CLOSED') {
 			if ($server_status != 'OPEN') {
-				die $this . ": invalid status: $server_status";
+				die $this . "::setServer(): invalid status: $serverStatus";
 			}
 		}
 	}
 	#print $this . ": cmd = $cmd";
 	my $obj = $this->{xpct};
-	$obj->send( 'SET ' . $server_status );
+	$obj->send( 'SET ' . $serverStatus );
 	my $before = $obj->before;
 	while ($before =~ /\ \ /) {
 		$before =~ s/\ \ /\ /g;
 	}
 	my @antes = split(/\r\n/,$before);
-	print "\@antes: " . join(":",@antes);
-	print 'before: ' . $obj->before . "\n";
-	print 'after: ' . $obj->after . "\n";
-	print 'match_str: ' . $obj->match_str, "\n";
-	print 'match_idx: ' . $obj->match_idx, "\n";
+	#print "\@antes: " . join(":",@antes);
+	#print 'before: ' . $obj->before . "\n";
+	#print 'after: ' . $obj->after . "\n";
+	#print 'match_str: ' . $obj->match_str, "\n";
+	#print 'match_idx: ' . $obj->match_idx, "\n";
 	#print 'error_expect: ' . $obj->error_expect . "\n";
 	#print 'error: ' . $obj->error . "\n";
 
-	my   $expect_object = $obj->expect_handle;
+	#my   $expect_object = $obj->expect_handle;
 	return;
 	
 }
@@ -212,6 +217,11 @@ sub stopServer {
 
 =over
 
+=item C<< parameter missing: serverId >>
+
+Call to method new() is missing the serverId argument to indicate the IIDBMS
+to connect to.
+
 =item C<< Ingres environment variable II_SYSTEM not set >>
 
 Ingres environment variables should be set in the user session running
@@ -224,10 +234,13 @@ LD_LIBRARY_PATH too. See Ingres RDBMS docs.
 The IIMONITOR command could not be found or does not permits execution for
 the current user.
 
+=item C<< parameter missing: serverId >>
+
+Call to method setServer() is missing the serverStatus argument.
+
 =item C<< invalid status: _SERVER_STATUS_PARAM_ >>
 
-The setServer() method received an invalid argument.
-Should be LISTEN, SHUTDOWN or let void.
+The showServer() or setServer() methods received an invalid argument.
 
 =back
 
@@ -282,9 +295,8 @@ None reported.
 
 No bugs have been reported.
 
-Please report any bugs or feature requests to
-C<bug-ingres-utility-iimonitor at rt.cpan.org>, or through the web interface at
-L<http://rt.cpan.org>.
+Please report any bugs or feature requests to C<bug-ingres-utility-iimonitor at rt.cpan.org>,
+or through the web interface at L<http://rt.cpan.org>.
 
 
 =head1 SUPPORT
