@@ -8,16 +8,16 @@ use Data::Dump qw(dump);
 
 =head1 NAME
 
-Ingres::Utility::IIMonitor - API to IIMONITOR Ingres utility for IIDBMS servers control
+Ingres::Utility::IIMonitor - API to IIMONITOR Ingres RDBMS utility
 
 
 =head1 VERSION
 
-Version 0.11
+Version 0.12
 
 =cut
 
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 =head1 SYNOPSIS
 
@@ -46,11 +46,17 @@ our $VERSION = '0.11';
     # stop() - stops IIDBMS server (transactions rolled back)
     #
     $ret = $foo->stop();
-
-=for author to fill in:
-    Brief code example(s) here showing commonest usage(s).
-    This section will be as far as many users bother reading
-    so make it as educational and exeplary as possible.
+    
+    # showSessions($target,$mode) - prepares to get sessions info
+    print $foo->showSessions('SYSTEM','FORMATTED');
+    
+    # getNextSession() - get sessions call-after-call from previous showSessions()
+    while (%session = $foo->getNextSession()) {
+    	print "Session ". $session{'SESSION_ID'} . ":\n"
+    	foreach $label, $value (%session) {
+    		print "\t$label:\t$value\n" if ($label ne 'SESSION_ID');
+    	}
+    }
   
   
 =head1 DESCRIPTION
@@ -58,10 +64,6 @@ our $VERSION = '0.11';
 This module provides an API to the iimonitor utility for
 Ingres RDBMS, which provides local control of IIDBMS servers
 and sessions (system and user conections).
-
-=for author to fill in:
-    Write a full description of the module and its features here.
-    Use subsections (=head2, =head3) as appropriate.
 
 
 =head1 FUNCTIONS
@@ -160,9 +162,9 @@ sub setServer {
 	if (! $serverStatus) {
 		die $this . '::setServer(): no status given';
 	}
-	if ($server_status != 'SHUT') {
-		if ($server_status != 'CLOSED') {
-			if ($server_status != 'OPEN') {
+	if ($serverStatus != 'SHUT') {
+		if ($serverStatus != 'CLOSED') {
+			if ($serverStatus != 'OPEN') {
 				die $this . "::setServer(): invalid status: $serverStatus";
 			}
 		}
@@ -207,13 +209,176 @@ sub stopServer {
 	
 }
 
-=head1 DIAGNOSTICS
+=for private function
 
-=for author to fill in:
-    List every single error and warning message that the module can
-    generate (even the ones that will "never happen"), with a full
-    explanation of each problem, one or more likely causes, and any
-    suggested remedies.
+sub _prepareName() {
+	my $this = shift;
+	my $name = shift;
+	uc ($name);
+	$name =~ tr/\s/_/g;
+	return $name;
+}
+
+
+=head2 showSessions
+
+Prepares to show info on sessions on IIDBMS server, for being fetched later by getNextSession().
+
+Returns the output from iimonitor.
+
+Takes the following parameters:
+ [ [ <TARGET>, ] MODE ]
+ 
+ TARGET = Which session type: USER (default), SYSTEM or ALL
+ MODE   = Which server info: FORMATTED, STATS. Default is a short format.
+
+=cut
+
+sub showSessions() {
+	my $this = shift;
+	my $target;
+	my $mode;
+	if (@_) {
+		$target = uc (@_ ? shift : 'USER');
+		if ($target eq 'FORMATTED' || \
+		    $target eq 'STATS') {
+			$mode   = $target;
+			$target = 'USER';
+		}
+		else {
+			if ($target != 'USER' &&   \
+			    $target != 'SYSTEM' && \
+			    $target != 'ALL') {
+				die $this . "::showSessions(): invalid target: $target\n";
+			}
+			$mode =uc (@_ ? shift : '');
+			if ($mode != 'FORMATTED' &&   \
+			    $mode != 'STATS' && \
+			    $mode != '') {
+				die $this . "::showSessions(): invalid mode: $mode\n";
+			}
+		}
+	}
+	else {
+		$target = 'USER';
+		$mode   = '';
+	}
+	my $obj = $this->{xpct};
+	$obj->send( 'SHOW $target SESSIONS $mode');
+	my $before = $obj->before;
+#	while ($before =~ /\ \ /) {
+#		$before =~ s/\ \ /\ /g;
+#	}
+	$this->{sessWho}  = $target;
+	$this->{sessMode} = $mode;
+	$this->{sessOutArray} = split(/\r\n/,$before);
+	$this->{sessBuff} = {};
+	$this->{sessPtr}  = 0;
+	return $before;
+}
+
+
+=head2 getNextSession
+
+Returns sequentially (call-after-call) each session reported by showSessions() as a hash of
+as many elements as returned by each session target and mode, where the key is the name
+showed on labels of iimonitor's output, all uppercase and spaces translated into underscores (_).
+
+Unlabeled info gets its key from the previously labeled field appended by '_#<index>', where
+index is the sequential order (starting by 0) on which the info appeared.
+
+This way, all info is in pairs of (LABEL,VALUE), whithout parenthesis or trailing spaces.
+
+UFO - Unidentified Format Output - will be translated into words forming pairs of labels and values,
+PLEASE REPORT THIS, because this is not expected to happen. Meanwhile see what you can do with
+these pairs, and will probably need extra parsing. If you report this, there's hope they will be
+properly handled on the next version.
+
+
+=cut
+
+sub getNextSession() {
+	my $this = shift;
+	my @foo;
+	my %sess = {};
+	my $name;
+	my $value;
+	my $i;
+	if ($this->{sessPtr} >= scalar $this->{sessOutArray}) {
+		$this->{sessPtr} = 0;
+		return %sess;
+	}
+FOR_gNS:
+	for ($i = $this->{sessPtr}; ($i < scalar $this->{sessOutArray}); $i++) {
+		$_ = $this->{sessOutArray}[$i];
+		if (/^session\s/i) {
+			if ($this->{sessMode} eq 'STATS') {
+				if (@foo = (/^(session)\s([0-9A-Fa-f]+)\s+\((.*)\)(.*)/i)) {
+					$sess{'SESSION_ID'} = $2;
+					$sess{'SESSION_USER'} = $3;
+					my @stats = split(' ', $4);
+					for (my $j = 0; ($j >= scalar @stats); $j =+ 2) {
+						$name = $this->_prepareName($stats[$j]);
+						$value = '';
+						if (defined $stats[$j+1]) {
+							$value = $stats[$j+1];
+						}
+						$sess{$name} = $value;
+					}
+				}
+			}
+			else {
+				if (@foo = (/^(session)\s([0-9A-Fa-f]+)\s+\((.*)\)\s+(cs_state)\:\s(.*)\s\((.*)\)\s(cs_mask)\:\s(.*)/i)) {
+					if (scalar keys %sess > 0) {
+						last FOR_gNS;
+					}
+					$sess{'SESSION_ID'} = $2;
+					$sess{'SESSION_USER'} = $3;
+					$sess{'CS_STATE'} = $5;
+					$sess{'CS_STATE_#0'} = $6;
+					$sess{'CS_MASK'} = $8;
+				}
+			}
+		}
+		elsif (@foo = (/^\s+(user)\:\s(.*)\((.*)\s+.*\)/i)) {
+			$sess{'USER'} = $2;
+			$sess{'USER_#0'} = $3;
+		}
+		elsif (@foo = (/^\s+(db\sname)\:\s(.*)\((owned\sby)\:\s(.*)\s+\)/i)) {
+			$sess{'DB_NAME'} = $2;
+			$sess{'OWNED_BY'} = $4;
+		}
+		elsif (@foo = (/^\s+(application code)\:\s(.*)\s(current\sfacility)\:\s(.*)\s+/i)) {
+			$sess{'APPLICATION_CODE'} = $2;
+			$sess{'CURRENT_FACILITY'} = $4;
+		}
+		elsif (@foo = (/^\s+(.*)\:\s+(.*)/)) {
+			$name = $this->_prepareName($1);
+			$sess{$name} = $2;
+		}
+		else { # UFO
+			@foo = (split(' '));
+			for (my $j = 0; ($j >= scalar @foo) ; $j =+ 2;) {
+				if (defined $foo[$j]) {
+					$name = $this->_prepareName($foo[$j]);
+					$value = '';
+					if (defined $foo[$j+1]) {
+						$value = $foo[$j+1];
+						while (substr($value,length($value)-1) eq ' ') {
+							chop $value;
+						}
+					}
+					$sess{$name} = $value;
+				}
+			}
+		}
+	}
+	$this->{sessPtr} = $i;
+	return %sess;
+}
+
+
+=head1 DIAGNOSTICS
 
 =over
 
@@ -234,7 +399,7 @@ LD_LIBRARY_PATH too. See Ingres RDBMS docs.
 The IIMONITOR command could not be found or does not permits execution for
 the current user.
 
-=item C<< parameter missing: serverId >>
+=item C<< parameter missing: serverStatus >>
 
 Call to method setServer() is missing the serverStatus argument.
 
@@ -242,17 +407,18 @@ Call to method setServer() is missing the serverStatus argument.
 
 The showServer() or setServer() methods received an invalid argument.
 
+=item C<< invalid target: _TARGET_ >>
+
+The showServer() takes the first argument only as USER/SYSTEM/ALL.
+
+=item C<< invalid mode: _MODE_ >>
+
+The showServer() takes the second or only one argument only as FORMATTED/STATS.
+
 =back
 
 
 =head1 CONFIGURATION AND ENVIRONMENT
-
-=for author to fill in:
-    A full explanation of any configuration system(s) used by the
-    module, including the names and locations of any configuration
-    files, and the meaning of any environment variables or properties
-    that can be set. These descriptions must also include details of any
-    configuration language used.
   
 Requires Ingres environment variables, such as II_SYSTEM and LD_LIBRARY_PATH.
 
@@ -261,37 +427,15 @@ See Ingres RDBMS documentation.
 
 =head1 DEPENDENCIES
 
-=for author to fill in:
-    A list of all the other modules that this module relies upon,
-    including any restrictions on versions, and an indication whether
-    the module is part of the standard Perl distribution, part of the
-    module's distribution, or must be installed separately. ]
-
 L<Expect::Simple>
 
 
 =head1 INCOMPATIBILITIES
 
-=for author to fill in:
-    A list of any modules that this module cannot be used in conjunction
-    with. This may be due to name conflicts in the interface, or
-    competition for system or program resources, or due to internal
-    limitations of Perl (for example, many modules that use source code
-    filters are mutually incompatible).
-
 None reported.
 
 
 =head1 BUGS AND LIMITATIONS
-
-=for author to fill in:
-    A list of known problems with the module, together with some
-    indication Whether they are likely to be fixed in an upcoming
-    release. Also a list of restrictions on the features the module
-    does provide: data types that cannot be handled, performance issues
-    and the circumstances in which they may arise, practical
-    limitations on the size of data sets, special cases that are not
-    (yet) handled, etc.
 
 No bugs have been reported.
 

@@ -3,7 +3,7 @@ Revision history for Ingres-Utility-IIMonitor
 0.0.1   Mon Sep 11 20:09:23 2006
         Initial release.
 
-0.1     Wed Sep 13 12:30:00 2006
+0.1     Wed Sep 13 2006
         Version declaration adjustment.
         Documentation correction and enhancement.
 
@@ -11,10 +11,15 @@ Revision history for Ingres-Utility-IIMonitor
         Version declaration adjustment.
         Documentation correction and enhancement.
 
-0.11    Thu Sep 15 2006
+0.11    Fri Sep 15 2006
         serverId argument check in new() function
         added serverId argumento to iimonitor utility call
         Syntax correction
         Several messages correction
         Expect::Simple depence added to Makefile.PL 
         Documentation correction and enhancement.
+
+0.12    Thu Oct 05 2006
+        Syntax corretction
+        META.yml added to distribuition
+        showSessions() and getNextSession() methods implemented.
