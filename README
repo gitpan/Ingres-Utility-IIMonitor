@@ -1,4 +1,6 @@
-Ingres-Utility-IIMonitor version 0.12
+Ingres-Utility-IIMonitor
+
+Ingres::Utility::IIMonitor adpO  API to IIMONITOR Ingres RDBMS utility		WORM
 
 This module provides an API to the iimonitor utility for
 Ingres RDBMS, which provides local control of IIDBMS servers

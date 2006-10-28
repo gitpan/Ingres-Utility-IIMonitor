@@ -4,20 +4,18 @@ use warnings;
 use strict;
 use Carp;
 use Expect::Simple;
-use Data::Dump qw(dump);
 
 =head1 NAME
 
-Ingres::Utility::IIMonitor - API to IIMONITOR Ingres RDBMS utility
-
+Ingres::Utility::IIMonitor - API to C<iimonitor> Ingres RDBMS utility
 
 =head1 VERSION
 
-Version 0.12
+Version 0.13
 
 =cut
 
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 =head1 SYNOPSIS
 
@@ -50,12 +48,12 @@ our $VERSION = '0.12';
     # showSessions($target,$mode) - prepares to get sessions info
     print $foo->showSessions('SYSTEM','FORMATTED');
     
-    # getNextSession() - get sessions call-after-call from previous showSessions()
-    while (%session = $foo->getNextSession()) {
-    	print "Session ". $session{'SESSION_ID'} . ":\n"
-    	foreach $label, $value (%session) {
-    		print "\t$label:\t$value\n" if ($label ne 'SESSION_ID');
-    	}
+    # getSession() - get sessions call-after-call from previous showSessions()
+    while (%session = $foo->getSession()) {
+        print "Session ". $session{'SESSION_ID'} . ":\n"
+        foreach $label, $value (%session) {
+            print "\t$label:\t$value\n" if ($label ne 'SESSION_ID');
+        }
     }
   
   
@@ -66,50 +64,55 @@ Ingres RDBMS, which provides local control of IIDBMS servers
 and sessions (system and user conections).
 
 
-=head1 FUNCTIONS
+=head1 METHODS
 
-=head2 new($serverId)
+=over
 
-Connects to an IIDBMS server.
+=item C<new($serverId)>
+
+Constructor, connects to an IIDBMS server through iimonitor utility.
 
 Takes the server id as argument to identify which server
 to control.
 
+ $iimonitor = Ingres::Utility::IIMonitor->new(12345);
+ 
 The server id can be obtained through L<Ingres::Utility::IINamu> module.
 
 =cut
 
-sub new {
-	my $class = shift;
-	my $this = {};
-	$class = ref($class) || $class;
-	bless $this, $class;
-	my $serverId = shift;
-	if (! $serverId) {
-		die $class . "::new(): parameter missing: serverId";
-	}
-	if (! defined($ENV{'II_SYSTEM'})) {
-		die $class . "::new(): Ingres environment variable II_SYSTEM not set";
-	}
-	my $iimonitor_file = $ENV{'II_SYSTEM'} . '/ingres/bin/iimonitor';
-	
-	if (! -x $iimonitor_file) {
-		die $class . "::new(): Ingres utility cannot be executed: $iimonitor_file";
-	}
-	$this->{cmd} = $iimonitor_file;
-	$this->{xpct} = new Expect::Simple {
-				Cmd => "$iimonitor_file $serverId",
-				Prompt => [ -re => 'IIMONITOR>\s+' ],
-				DisconnectCmd => 'QUIT',
-				Verbose => 0,
-				Debug => 0,
-				Timeout => 10
-        } or die $this . "::new(): Module Expect::Simple cannot be instanciated";
+sub new($) {
+    my $class = shift;
+    my $this = {};
+    $class = ref($class) || $class;
+    bless $this, $class;
+    my $serverId = shift;
+    if (! $serverId) {
+        croak "parameter missing: serverId";
+    }
+    if (! defined($ENV{'II_SYSTEM'})) {
+        croak "Ingres environment variable II_SYSTEM not set";
+    }
+    my $iimonitor_file = $ENV{'II_SYSTEM'} . '/ingres/bin/iimonitor';
+    
+    if (! -x $iimonitor_file) {
+        croak "Ingres utility cannot be executed: $iimonitor_file";
+    }
+    $this->{cmd} = $iimonitor_file;
+    $this->{xpct} = new Expect::Simple {
+                Cmd => "$iimonitor_file $serverId",
+                Prompt => [ -re => 'IIMONITOR>\s+' ],
+                DisconnectCmd => 'QUIT',
+                Verbose => 0,
+                Debug => 0,
+                Timeout => 10
+        } or croak "Module Expect::Simple cannot be instanciated";
         $this->{serverId} = $serverId;
-	return $this;
+    return $this;
 }
 
-=head2 showServer($serverStatus)
+
+=item C<showServer($serverStatus)>
 
 Returns the server status.
 
@@ -123,28 +126,30 @@ Returns 'OPEN', 'CLOSED' or 'PENDING' (for shutdown).
 
 =cut
 
-sub showServer {
-	my $this = shift;
-	my $serverStatus = uc (@_ ? shift : '');
-	if ($serverStatus) {
-		if ($serverStatus != 'LISTEN') {
-			if ($serverStatus != 'SHUTDOWN') {
-				die $this . "::showServer(): invalid status: $serverStatus";
-			}
-		}
-	}
-	#print $this . ": cmd = $cmd";
-	my $obj = $this->{xpct};
-	$obj->send( 'SHOW SERVER ' . $serverStatus );
-	my $before = $obj->before;
-	while ($before =~ /\ \ /) {
-		$before =~ s/\ \ /\ /g;
-	}
-	my @antes = split(/\r\n/,$before);
-	return join($/,@antes);
+sub showServer($) {
+    my $this = shift;
+    my $serverStatus = uc (@_ ? shift : '');
+    if ($serverStatus) {
+        if ($serverStatus ne 'LISTEN') {
+            if ($serverStatus ne 'SHUTDOWN') {
+                carp "invalid status: ($serverStatus)";
+                return ();
+            }
+        }
+    }
+    #print $this . ": cmd = $cmd";
+    my $obj = $this->{xpct};
+    $obj->send( 'SHOW SERVER ' . $serverStatus );
+    my $before = $obj->before;
+    while ($before =~ /\ \ /) {
+        $before =~ s/\ \ /\ /g;
+    }
+    my @antes = split /\r\n/,$before;
+    return join($/,@antes);
 }
 
-=head2 setServer($serverStatus)
+
+=item C<setServer($serverStatus)>
 
 Changes the server status to the state indicated by the argument:
 
@@ -156,129 +161,122 @@ Changes the server status to the state indicated by the argument:
 
 =cut
 
-sub setServer {
-	my $this = shift;
-	my $serverStatus = uc (shift);
-	if (! $serverStatus) {
-		die $this . '::setServer(): no status given';
-	}
-	if ($serverStatus != 'SHUT') {
-		if ($serverStatus != 'CLOSED') {
-			if ($serverStatus != 'OPEN') {
-				die $this . "::setServer(): invalid status: $serverStatus";
-			}
-		}
-	}
-	#print $this . ": cmd = $cmd";
-	my $obj = $this->{xpct};
-	$obj->send( 'SET ' . $serverStatus );
-	my $before = $obj->before;
-	while ($before =~ /\ \ /) {
-		$before =~ s/\ \ /\ /g;
-	}
-	my @antes = split(/\r\n/,$before);
-	#print "\@antes: " . join(":",@antes);
-	#print 'before: ' . $obj->before . "\n";
-	#print 'after: ' . $obj->after . "\n";
-	#print 'match_str: ' . $obj->match_str, "\n";
-	#print 'match_idx: ' . $obj->match_idx, "\n";
-	#print 'error_expect: ' . $obj->error_expect . "\n";
-	#print 'error: ' . $obj->error . "\n";
-
-	#my   $expect_object = $obj->expect_handle;
-	return;
-	
+sub setServer($) {
+    my $this = shift;
+    my $serverStatus = uc (shift);
+    if (! $serverStatus) {
+        carp 'no status given';
+    }
+    if ($serverStatus ne 'SHUT') {
+        if ($serverStatus ne 'CLOSED') {
+            if ($serverStatus ne 'OPEN') {
+                carp "invalid status: ($serverStatus)";
+                return;
+            }
+        }
+    }
+    my $obj = $this->{xpct};
+    $obj->send( 'SET SERVER ' . $serverStatus );
+    my $before = $obj->before;
+    while ($before =~ /\ \ /) {
+        $before =~ s/\ \ /\ /g;
+    }
+    my @antes = split /\r\n/,$before;
+    return $before;
+    
 }
 
-=head2 stopServer
+
+=item C<stopServer()>
 
 Stops server immediatly, rolling back transactions and closing all connections.
 
 =cut
 
-sub stopServer {
-	my $this = shift;
-	my $obj = $this->{xpct};
-	$obj->send( 'STOP');
-	my $before = $obj->before;
-	while ($before =~ /\ \ /) {
-		$before =~ s/\ \ /\ /g;
-	}
-	my @antes = split(/\r\n/,$before);
-	return;
-	
+sub stopServer() {
+    my $this = shift;
+    my $obj = $this->{xpct};
+    $obj->send( 'STOP');
+    my $before = $obj->before;
+    while ($before =~ /\ \ /) {
+        $before =~ s/\ \ /\ /g;
+    }
+    my @antes = split /\r\n/,$before;
+    return;
+    
 }
 
-=for private function
-
-sub _prepareName() {
-	my $this = shift;
-	my $name = shift;
-	uc ($name);
-	$name =~ tr/\s/_/g;
-	return $name;
+# Transform into all uppercase and translate spaces into underscores
+sub _prepareName($) {
+    my $this = shift;
+    my $name = shift;
+    $name = uc $name;
+    $name =~ tr/\ /\_/;
+    return $name;
 }
 
 
-=head2 showSessions
+=item C<showSessions(;$target,$mode)>
 
 Prepares to show info on sessions on IIDBMS server, for being fetched later by getNextSession().
 
 Returns the output from iimonitor.
 
 Takes the following parameters:
- [ [ <TARGET>, ] MODE ]
+ [<TARGET>], [<MODE>]
  
  TARGET = Which session type: USER (default), SYSTEM or ALL
  MODE   = Which server info: FORMATTED, STATS. Default is a short format.
 
 =cut
 
-sub showSessions() {
-	my $this = shift;
-	my $target;
-	my $mode;
-	if (@_) {
-		$target = uc (@_ ? shift : 'USER');
-		if ($target eq 'FORMATTED' || \
-		    $target eq 'STATS') {
-			$mode   = $target;
-			$target = 'USER';
-		}
-		else {
-			if ($target != 'USER' &&   \
-			    $target != 'SYSTEM' && \
-			    $target != 'ALL') {
-				die $this . "::showSessions(): invalid target: $target\n";
-			}
-			$mode =uc (@_ ? shift : '');
-			if ($mode != 'FORMATTED' &&   \
-			    $mode != 'STATS' && \
-			    $mode != '') {
-				die $this . "::showSessions(): invalid mode: $mode\n";
-			}
-		}
-	}
-	else {
-		$target = 'USER';
-		$mode   = '';
-	}
-	my $obj = $this->{xpct};
-	$obj->send( 'SHOW $target SESSIONS $mode');
-	my $before = $obj->before;
-#	while ($before =~ /\ \ /) {
-#		$before =~ s/\ \ /\ /g;
-#	}
-	$this->{sessWho}  = $target;
-	$this->{sessMode} = $mode;
-	$this->{sessOutArray} = split(/\r\n/,$before);
-	$this->{sessBuff} = {};
-	$this->{sessPtr}  = 0;
-	return $before;
+sub showSessions(;$$) {
+    my $this = shift;
+    my $target;
+    my $mode;
+    $target = uc (@_ ? shift : 'USER');
+    if ($target eq 'FORMATTED' or
+        $target eq 'STATS') {
+        if (@_) {
+            carp "invalid paramter after $target: (" . join(' ',@_) . ")";
+            return '';
+        }
+        $mode   = $target;
+        $target = 'USER';
+    }
+    else {
+        if ($target ne 'USER'   and
+            $target ne 'SYSTEM' and
+            $target ne 'ALL'    and
+            $target ne '') {
+            carp "invalid target: ($target)";
+            return '';
+        }
+        $mode =uc (@_ ? shift : '');
+        if ($mode ne 'FORMATTED' and
+            $mode ne 'STATS'     and
+            $mode ne '') {
+            carp "invalid mode: ($mode)";
+            return '';
+        }
+    }
+    my $obj = $this->{xpct};
+    $obj->send("SHOW $target SESSIONS $mode");
+    my $before = $obj->before;
+#   while ($before =~ /\ \ /) {
+#       $before =~ s/\ \ /\ /g;
+#   }
+    $this->{sessWho}  = $target;
+    $this->{sessMode} = $mode;
+    my @tmp = split (/\r\n/,$before);
+    $this->{sessOutArray} = \@tmp;
+    $this->{sessBuff} = ();
+    $this->{sessPtr}  = 0;
+    return $before;
 }
 
 
-=head2 getNextSession
+=item C<getSession()>
 
 Returns sequentially (call-after-call) each session reported by showSessions() as a hash of
 as many elements as returned by each session target and mode, where the key is the name
@@ -297,86 +295,99 @@ properly handled on the next version.
 
 =cut
 
-sub getNextSession() {
-	my $this = shift;
-	my @foo;
-	my %sess = {};
-	my $name;
-	my $value;
-	my $i;
-	if ($this->{sessPtr} >= scalar $this->{sessOutArray}) {
-		$this->{sessPtr} = 0;
-		return %sess;
-	}
+sub getSession() {
+    my $this = shift;
+    my @foo;
+    my %sess = ();
+    my $name;
+    my $value;
+    my $i;
+    my $j;
+    if ($this->{sessPtr} >= scalar @{$this->{sessOutArray}}) {
+        $this->{sessPtr} = 0;
+        return %sess;
+    }
 FOR_gNS:
-	for ($i = $this->{sessPtr}; ($i < scalar $this->{sessOutArray}); $i++) {
-		$_ = $this->{sessOutArray}[$i];
-		if (/^session\s/i) {
-			if ($this->{sessMode} eq 'STATS') {
-				if (@foo = (/^(session)\s([0-9A-Fa-f]+)\s+\((.*)\)(.*)/i)) {
-					$sess{'SESSION_ID'} = $2;
-					$sess{'SESSION_USER'} = $3;
-					my @stats = split(' ', $4);
-					for (my $j = 0; ($j >= scalar @stats); $j =+ 2) {
-						$name = $this->_prepareName($stats[$j]);
-						$value = '';
-						if (defined $stats[$j+1]) {
-							$value = $stats[$j+1];
-						}
-						$sess{$name} = $value;
-					}
-				}
-			}
-			else {
-				if (@foo = (/^(session)\s([0-9A-Fa-f]+)\s+\((.*)\)\s+(cs_state)\:\s(.*)\s\((.*)\)\s(cs_mask)\:\s(.*)/i)) {
-					if (scalar keys %sess > 0) {
-						last FOR_gNS;
-					}
-					$sess{'SESSION_ID'} = $2;
-					$sess{'SESSION_USER'} = $3;
-					$sess{'CS_STATE'} = $5;
-					$sess{'CS_STATE_#0'} = $6;
-					$sess{'CS_MASK'} = $8;
-				}
-			}
-		}
-		elsif (@foo = (/^\s+(user)\:\s(.*)\((.*)\s+.*\)/i)) {
-			$sess{'USER'} = $2;
-			$sess{'USER_#0'} = $3;
-		}
-		elsif (@foo = (/^\s+(db\sname)\:\s(.*)\((owned\sby)\:\s(.*)\s+\)/i)) {
-			$sess{'DB_NAME'} = $2;
-			$sess{'OWNED_BY'} = $4;
-		}
-		elsif (@foo = (/^\s+(application code)\:\s(.*)\s(current\sfacility)\:\s(.*)\s+/i)) {
-			$sess{'APPLICATION_CODE'} = $2;
-			$sess{'CURRENT_FACILITY'} = $4;
-		}
-		elsif (@foo = (/^\s+(.*)\:\s+(.*)/)) {
-			$name = $this->_prepareName($1);
-			$sess{$name} = $2;
-		}
-		else { # UFO
-			@foo = (split(' '));
-			for (my $j = 0; ($j >= scalar @foo) ; $j =+ 2;) {
-				if (defined $foo[$j]) {
-					$name = $this->_prepareName($foo[$j]);
-					$value = '';
-					if (defined $foo[$j+1]) {
-						$value = $foo[$j+1];
-						while (substr($value,length($value)-1) eq ' ') {
-							chop $value;
-						}
-					}
-					$sess{$name} = $value;
-				}
-			}
-		}
-	}
-	$this->{sessPtr} = $i;
-	return %sess;
+for ($i = $this->{sessPtr}; ($i < scalar @{$this->{sessOutArray}}); $i++) {
+        $_ = $this->{sessOutArray}[$i];
+        if (/^session\s/i) {
+            if ($this->{sessMode} eq 'STATS') {
+                if (@foo = (/^(session)\s([0-9A-Fa-f]+)\s+\((.*)\)(\s*)(.*)/i)) {
+                    if (scalar keys %sess > 0) {
+                        last FOR_gNS;
+                    }
+                    $sess{'SESSION_ID'} = $2;
+                    $sess{'SESSION_USER'} = $3;
+                    if (defined $5) {
+                        my @stats = split /\s+/,$5;
+                        for ($j = 0; ($j < (scalar @stats)); $j += 2) {
+                            $name = $stats[$j];
+                            $name = $this->_prepareName($name);
+                            $value = '';
+                            if (defined $stats[$j+1]) {
+                                $value = $stats[$j+1];
+                            }
+                            $sess{$name} = $value;
+                        }
+                    }
+                }
+            }
+            else {
+                if (@foo = (/^(session)\s([0-9A-Fa-f]+)\s+\((.*)\)\s+(cs_state)\:\s(.*)\s\((.*)\)\s(cs_mask)\:\s(.*)/i)) {
+                    if (scalar keys %sess > 0) {
+                        last FOR_gNS;
+                    }
+                    $sess{'SESSION_ID'} = $2;
+                    $sess{'SESSION_USER'} = $3;
+                    $sess{'CS_STATE'} = $5;
+                    $sess{'CS_STATE_#0'} = $6;
+                    $sess{'CS_MASK'} = $8;
+                }
+            }
+        }
+        elsif (@foo = (/^\s+(user)\:\s(.*)\((.*)\s+.*\)/i)) {
+            $sess{'USER'} = $2;
+            $sess{'USER_#0'} = $3;
+        }
+        elsif (@foo = (/^\s+(db\sname)\:\s(.*)\((owned\sby)\:\s(.*)\s+\)/i)) {
+            $sess{'DB_NAME'} = $2;
+            $sess{'OWNED_BY'} = $4;
+        }
+        elsif (@foo = (/^\s+(application\scode)\:\s(.*)\s(current\sfacility)\:\s(.*)\s+\((.*)\)/i)) {
+            $sess{'APPLICATION_CODE'} = $2;
+            $sess{'CURRENT_FACILITY'} = $4;
+            $sess{'CURRENT_FACILITY_#0'} = $5;
+        }
+        elsif (@foo = (/^\s+(.*)\:\s+(.*:.*)/)) {
+            $name = $this->_prepareName($1);
+            $sess{$name} = $2;
+        }
+        elsif (@foo = (/^\s+(.*)\:\s*(.*)/)) {
+            $name = $this->_prepareName($1);
+            $sess{$name} = $2;
+        }
+        else { # UFO - Unidentifyed Format Output
+            @foo = split ' ';
+            for ($j = 0; ($j < scalar @foo) ; $j += 2) {
+                if (defined $foo[$j]) {
+                    $name = $this->_prepareName($foo[$j]);
+                    $value = '';
+                    if (defined $foo[$j+1]) {
+                        $value = $foo[$j+1];
+                        while (substr($value,length($value)-1) eq ' ') {
+                            chop $value;
+                        }
+                    }
+                    $sess{$name} = $value;
+                }
+            }
+        }
+    }
+    $this->{sessPtr} = $i;
+    return %sess;
 }
 
+=back
 
 =head1 DIAGNOSTICS
 
@@ -403,17 +414,22 @@ the current user.
 
 Call to method setServer() is missing the serverStatus argument.
 
-=item C<< invalid status: _SERVER_STATUS_PARAM_ >>
+=item C<< invalid status: (_SERVER_STATUS_PARAM_) >>
 
 The showServer() or setServer() methods received an invalid argument.
 
-=item C<< invalid target: _TARGET_ >>
+=item C<< invalid target: (_TARGET_) >>
 
 The showServer() takes the first argument only as USER/SYSTEM/ALL.
 
-=item C<< invalid mode: _MODE_ >>
+=item C<< invalid mode: (_MODE_) >>
 
 The showServer() takes the second or only one argument only as FORMATTED/STATS.
+
+=item C<< invalid paramter after _TARGET_: (_PARAMETER_) >>
+
+If showServer() takes the first as FORMATTED/STATS then no other parameter is
+accepted.
 
 =back
 
